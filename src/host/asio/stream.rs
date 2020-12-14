@@ -53,6 +53,248 @@ impl Stream {
 }
 
 impl Device {
+    fn build_full_duplex_stream_raw<D, E>(
+        &self,
+        input_config: &StreamConfig,
+        output_config: &StreamConfig,
+        sample_format: SampleFormat,
+        mut data_callback: D,
+        error_callback: E,
+    ) -> Result<Self::Stream, BuildStreamError>
+    where
+        D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
+        E: FnMut(StreamError) + Send + 'static,
+    {
+        assert_eq!(input_config.buffer_size, output_config.buffer_size);
+        assert_eq!(input_config.sample_rate, output_config.sample_rate);
+
+        let stream_type = self.driver.input_data_type().map_err(build_stream_err)?;
+        let expected_sample_format = super::device::convert_data_type(&stream_type)
+            .ok_or(BuildStreamError::StreamConfigNotSupported)?;
+        if sample_format != expected_sample_format {
+            return Err(BuildStreamError::StreamConfigNotSupported);
+        }
+
+        let input_num_channels = input_config.channels.clone();
+        let input_buffer_size = self.get_or_create_input_stream(input_config, sample_format)?;
+        let input_cpal_num_samples = input_buffer_size * input_num_channels as usize;
+
+        let output_num_channels = output_config.channels.clone();
+        let output_buffer_size = self.get_or_create_output_stream(output_config, sample_format)?;
+        let output_cpal_num_samples = output_buffer_size * output_num_channels as usize;
+
+        let input_len_bytes = input_cpal_num_samples * sample_format.sample_size();
+        let mut input_interleaved = vec![0u8; input_len_bytes];
+
+        let output_len_bytes = output_cpal_num_samples * sample_format.sample_size();
+        let mut output_interleaved = vec![0u8; output_len_bytes];
+
+        let stream_playing = Arc::new(AtomicBool::new(false));
+        let playing = Arc::clone(&stream_playing);
+        let asio_streams = self.asio_streams.clone();
+
+        let input_config = input_config.clone();
+        let output_config = output_config.clone();
+
+        let callback_id = self.driver.add_callback(move |callback_info| unsafe {
+            if !playing.load(Ordering::SeqCst) {
+                return;
+            }
+
+            let stream_lock = asio_streams.lock();
+            let ref input_asio_stream = match stream_lock.input {
+                Some(ref asio_stream) => asio_stream,
+                None => return,
+            };
+
+            let ref output_asio_stream = match stream_lock.output {
+                Some(ref asio_stream) => asio_stream,
+                None => return,
+            };
+
+            unsafe fn process_callback<A, B, D, FA, FB>(
+                data_callback: &mut D,
+                input_interleaved: &mut [u8],
+                output_interleaved: &mut [u8],
+                asio_stream: &sys::AsioStream,
+                asio_info: &sys::CallbackInfo,
+                sample_rate: crate::SampleRate,
+                from_endianness: FA,
+                to_endianness: FB,
+            ) where
+                A: AsioSample,
+                B: Sample,
+                D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo)
+                    + Send
+                    + 'static,
+                FA: Fn(A) -> A,
+                FB: Fn(B) -> B,
+            {
+                // 1. Write the ASIO channels to the CPAL buffer.
+                let input_interleaved: &mut [B] = cast_slice_mut(input_interleaved);
+                let n_frames = asio_stream.buffer_size as usize;
+                let n_in_channels = input_interleaved.len() / n_frames;
+                let buffer_index = asio_info.buffer_index as usize;
+
+                for ch_ix in 0..n_in_channels {
+                    let asio_channel = asio_channel_slice::<A>(asio_stream, buffer_index, ch_ix);
+                    for (frame, s_asio) in interleaved.chunks_mut(n_in_channels).zip(asio_channel) {
+                        frame[ch_ix] = from_endianness(*s_asio).to_cpal_sample();
+                    }
+                }
+
+                // 2. Call
+
+                let data = input_interleaved.as_mut_ptr() as *mut ();
+                let len = input_interleaved.len();
+                let input_data = Data::from_parts(data, len, B::FORMAT);
+
+                let callback = system_time_to_stream_instant(asio_info.system_time);
+                let delay = frames_to_duration(n_frames, sample_rate);
+                let capture = callback
+                    .sub(delay)
+                    .expect("`capture` occurs before origin of ASIO `StreamInstant`");
+                let timestamp = crate::InputStreamTimestamp { callback, capture };
+                let input_info = InputCallbackInfo { timestamp };
+
+                let playback = callback
+                    .add(delay)
+                    .expect("`playback` occurs beyond representation supported by `StreamInstant`");
+                let timestamp = crate::OutputStreamTimestamp { callback, playback };
+                let output_info = OutputCallbackInfo { timestamp };
+
+                data_callback(&input_data, &mut data_out, &input_info, &output_info);
+
+                // 3. Push them out by calling the dastardly callback
+                let n_out_channels = output_interleaved.len() / n_frames;
+                let buffer_index = asio_info.buffer_index as usize;
+                if silence_asio_buffer {
+                    for ch_ix in 0..n_out_channels {
+                        let asio_channel =
+                            asio_channel_slice_mut::<B>(asio_stream, buffer_index, ch_ix);
+                        asio_channel
+                            .iter_mut()
+                            .for_each(|s| *s = to_endianness(B::SILENCE));
+                    }
+                }
+
+                // 3. Write interleaved samples to ASIO channels, one channel at a time.
+                for ch_ix in 0..n_out_channels {
+                    let asio_channel =
+                        asio_channel_slice_mut::<B>(asio_stream, buffer_index, ch_ix);
+                    for (frame, s_asio) in output_interleaved.chunks(n_out_channels).zip(asio_channel) {
+                        *s_asio = *s_asio + to_endianness(B::from_cpal_sample(&frame[ch_ix]));
+                    }
+                }
+            }
+        });
+
+        match (&stream_type, sample_format) {
+            (&sys::AsioSampleType::ASIOSTInt16LSB, SampleFormat::I16) => {
+                process_callback::<i16, i16, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    from_le,
+                    to_le,
+                );
+            }
+            (&sys::AsioSampleType::ASIOSTInt16MSB, SampleFormat::I16) => {
+                process_callback::<i16, i16, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    from_be,
+                    to_be,
+                );
+            }
+
+            // TODO: Handle endianness conversion for floats? We currently use the `PrimInt`
+            // trait for the `to_le` and `to_be` methods, but this does not support floats.
+            (&sys::AsioSampleType::ASIOSTFloat32LSB, SampleFormat::F32)
+            | (&sys::AsioSampleType::ASIOSTFloat32MSB, SampleFormat::F32) => {
+                process_callback::<f32, f32, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    std::convert::identity::<f32>,
+                    std::convert::identity::<f32>,
+                );
+            }
+
+            // TODO: Add support for the following sample formats to CPAL and simplify the
+            // `process_output_callback` function above by removing the unnecessary sample
+            // conversion function.
+            (&sys::AsioSampleType::ASIOSTInt32LSB, SampleFormat::I16) => {
+                process_callback::<i32, i16, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    from_le,
+                    to_le,
+                );
+            }
+            (&sys::AsioSampleType::ASIOSTInt32MSB, SampleFormat::I16) => {
+                process_callback::<i32, i16, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    from_be,
+                    to_be,
+                );
+            }
+            // TODO: Handle endianness conversion for floats? We currently use the `PrimInt`
+            // trait for the `to_le` and `to_be` methods, but this does not support floats.
+            (&sys::AsioSampleType::ASIOSTFloat64LSB, SampleFormat::F32)
+            | (&sys::AsioSampleType::ASIOSTFloat64MSB, SampleFormat::F32) => {
+                process_callback::<f64, f32, _, _>(
+                    &mut data_callback,
+                    &mut input_interleaved,
+                    &mut output_interleaved,
+                    asio_stream,
+                    callback_info,
+                    config.sample_rate,
+                    std::convert::identity::<f64>,
+                    std::convert::identity::<f64>,
+                );
+            }
+
+            unsupported_format_pair => unreachable!(
+                "`build_input_stream_raw` should have returned with unsupported \
+                     format {:?}",
+                unsupported_format_pair
+            ),
+        }
+
+        let driver = self.driver.clone();
+        let asio_streams = self.asio_streams.clone();
+
+        // Immediately start the device?
+        self.driver.start().map_err(build_stream_err)?;
+
+        Ok(Stream {
+            playing: stream_playing,
+            driver,
+            asio_streams,
+            callback_id,
+        })
+    }
+
     pub fn build_input_stream_raw<D, E>(
         &self,
         config: &StreamConfig,
@@ -136,7 +378,7 @@ impl Device {
                 let delay = frames_to_duration(n_frames, sample_rate);
                 let capture = callback
                     .sub(delay)
-                    .expect("`capture` occurs before origin of alsa `StreamInstant`");
+                    .expect("`capture` occurs before origin of ASIO `StreamInstant`");
                 let timestamp = crate::InputStreamTimestamp { callback, capture };
                 let info = InputCallbackInfo { timestamp };
                 data_callback(&data, &info);

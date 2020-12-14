@@ -166,6 +166,39 @@ pub trait DeviceTrait {
         )
     }
 
+    /// Create a dynamically typed full duplex stream.
+    fn build_full_duplex_stream<T, D, E>(
+        &self,
+        input_config: &StreamConfig,
+        output_config: &StreamConfig,
+        mut data_callback: D,
+        error_callback: E,
+    ) -> Result<Self::Stream, BuildStreamError>
+    where
+        T: Sample,
+        D: FnMut(&[T], &mut [T], &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
+        E: FnMut(StreamError) + Send + 'static,
+    {
+        self.build_full_duplex_stream_raw(
+            input_config,
+            output_config,
+            T::FORMAT,
+            move |input, output, input_info, output_info| {
+                data_callback(
+                    input
+                        .as_slice()
+                        .expect("host supplied incorrect sample type"),
+                    output
+                        .as_slice_mut()
+                        .expect("host supplied incorrect sample type"),
+                    input_info,
+                    output_info,
+                )
+            },
+            error_callback,
+        )
+    }
+
     /// Create a dynamically typed input stream.
     fn build_input_stream_raw<D, E>(
         &self,
@@ -189,6 +222,25 @@ pub trait DeviceTrait {
     where
         D: FnMut(&mut Data, &OutputCallbackInfo) + Send + 'static,
         E: FnMut(StreamError) + Send + 'static;
+
+    /// Create a dynamically typed full duplex stream.
+    fn build_full_duplex_stream_raw<D, E>(
+        &self,
+        input_config: &StreamConfig,
+        output_config: &StreamConfig,
+        sample_format: SampleFormat,
+        data_callback: D,
+        error_callback: E,
+    ) -> Result<Self::Stream, BuildStreamError>
+    where
+        D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
+        E: FnMut(StreamError) + Send + 'static,
+    {
+        assert_eq!(input_config.sample_rate, output_config.sample_rate);
+        assert_eq!(input_config.buffer_size, output_config.buffer_size);
+
+        unimplemented!()
+    }
 }
 
 /// A stream created from `Device`, with methods to control playback.
