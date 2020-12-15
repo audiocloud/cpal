@@ -77,14 +77,20 @@ impl Device {
             return Err(BuildStreamError::StreamConfigNotSupported);
         }
 
-        let num_channels = config.channels.clone();
-        let buffer_size = self.get_or_create_input_stream(config, sample_format)?;
+        let num_channels = input_config.channels.clone();
+        let buffer_size = self.get_or_create_input_stream(output_config, sample_format)?;
         let cpal_num_samples = buffer_size * num_channels as usize;
 
         // Create the buffer depending on the size of the data type.
         let len_bytes = cpal_num_samples * sample_format.sample_size();
-        let mut interleaved_inpout = vec![0u8; len_bytes];
+        let mut interleaved_input = vec![0u8; len_bytes];
+
+        let num_channels = output_config.channels.clone();
+        let buffer_size = self.get_or_create_output_stream(output_config, sample_format)?;
+        let cpal_num_samples = buffer_size * num_channels as usize;
+        let len_bytes = cpal_num_samples * sample_format.sample_size();
         let mut interleaved_output = vec![0u8; len_bytes];
+
         let mut silence_asio_buffer = SilenceAsioBuffer::default();
 
         let stream_playing = Arc::new(AtomicBool::new(false));
@@ -128,8 +134,8 @@ impl Device {
             /// 2. Deliver the CPAL buffer to the user callback.
             unsafe fn process_callback<A, B, D, FA, FB>(
                 data_callback: &mut D,
-                input_interleaved: &mut [u8],
-                output_interleaved: &mut [u8],
+                interleaved_input: &mut [u8],
+                interleaved_output: &mut [u8],
                 silence_asio_buffer: bool,
                 asio_stream: &sys::AsioStream,
                 asio_info: &sys::CallbackInfo,
@@ -156,7 +162,7 @@ impl Device {
                 }
 
                 // 2. Deliver the interleaved buffer to the callback.
-                let data = interleaved_inpout.as_mut_ptr() as *mut ();
+                let data = interleaved.as_mut_ptr() as *mut ();
                 let len = interleaved.len();
                 let in_data = Data::from_parts(data, len, B::FORMAT);
                 let callback = system_time_to_stream_instant(asio_info.system_time);
@@ -183,7 +189,7 @@ impl Device {
                 data_callback(&in_data, &mut out_data, &in_info, &out_info);
 
                 // 2. Silence ASIO channels if necessary.
-                let n_channels = interleaved_output.len() / n_frames;
+                let n_channels = interleaved.len() / n_frames;
                 let buffer_index = asio_info.buffer_index as usize;
                 if silence_asio_buffer {
                     for ch_ix in 0..n_channels {
@@ -209,7 +215,7 @@ impl Device {
                 (&sys::AsioSampleType::ASIOSTInt16LSB, SampleFormat::I16) => {
                     process_callback::<i16, i16, _, _, _>(
                         &mut data_callback,
-                        &mut interleaved_inpout,
+                        &mut interleaved_input,
                         &mut interleaved_output,
                         silence,
                         asio_stream,
