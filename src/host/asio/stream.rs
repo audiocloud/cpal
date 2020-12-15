@@ -99,7 +99,7 @@ impl Device {
 
         // Set the input callback.
         // This is most performance critical part of the ASIO bindings.
-        let config = config.clone();
+        let config = input_config.clone();
 
         let callback_id = self.driver.add_callback(move |callback_info| unsafe {
             // If not playing return early.
