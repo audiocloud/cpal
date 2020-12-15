@@ -12,6 +12,7 @@ extern crate ringbuf;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::RingBuffer;
+use cpal::HostId;
 
 const LATENCY_MS: f32 = 150.0;
 
@@ -41,7 +42,7 @@ fn main() -> Result<(), anyhow::Error> {
         not(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd")),
         not(feature = "jack")
     ))]
-    let host = cpal::default_host();
+    let host = cpal::host_from_id(HostId::Asio).expect("ASIO!");
 
     // Default devices.
     let input_device = host

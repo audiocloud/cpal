@@ -95,6 +95,21 @@ impl DeviceTrait for Device {
     {
         unimplemented!()
     }
+
+    fn build_full_duplex_stream_raw<D, E>(
+        &self,
+        _input_config: &StreamConfig,
+        _output_config: &StreamConfig,
+        _sample_format: SampleFormat,
+        _data_callback: D,
+        _error_callback: E,
+    ) -> Result<Self::Stream, BuildStreamError>
+        where
+            D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
+            E: FnMut(StreamError) + Send + 'static,
+    {
+        unimplemented!()
+    }
 }
 
 impl HostTrait for Host {

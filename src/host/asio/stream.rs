@@ -53,7 +53,7 @@ impl Stream {
 }
 
 impl Device {
-    fn build_full_duplex_stream_raw<D, E>(
+    pub fn build_full_duplex_stream_raw<D, E>(
         &self,
         input_config: &StreamConfig,
         output_config: &StreamConfig,

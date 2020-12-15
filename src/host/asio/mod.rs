@@ -109,6 +109,21 @@ impl DeviceTrait for Device {
     {
         Device::build_output_stream_raw(self, config, sample_format, data_callback, error_callback)
     }
+
+    fn build_full_duplex_stream_raw<D, E>(
+        &self,
+        input_config: &StreamConfig,
+        output_config: &StreamConfig,
+        sample_format: SampleFormat,
+        data_callback: D,
+        error_callback: E,
+    ) -> Result<Self::Stream, BuildStreamError>
+        where
+            D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
+            E: FnMut(StreamError) + Send + 'static,
+    {
+        Device::build_full_duplex_stream_raw(self, input_config, output_config, sample_format, data_callback, error_callback)
+    }
 }
 
 impl StreamTrait for Stream {
