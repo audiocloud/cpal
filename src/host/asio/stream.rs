@@ -167,10 +167,10 @@ impl Device {
                 let timestamp = crate::InputStreamTimestamp { callback, capture };
                 let in_info = InputCallbackInfo { timestamp };
 
-                let interleaved: &mut [A] = cast_slice_mut(interleaved_output);
+                let interleaved: &mut [B] = cast_slice_mut(interleaved_output);
                 let data = interleaved.as_mut_ptr() as *mut ();
                 let len = interleaved.len();
-                let mut out_data = Data::from_parts(data, len, A::FORMAT);
+                let mut out_data = Data::from_parts(data, len, B::FORMAT);
                 let callback = system_time_to_stream_instant(asio_info.system_time);
                 let n_frames = asio_stream.buffer_size as usize;
                 let delay = frames_to_duration(n_frames, sample_rate);
@@ -188,19 +188,19 @@ impl Device {
                 if silence_asio_buffer {
                     for ch_ix in 0..n_channels {
                         let asio_channel =
-                            asio_channel_slice_mut::<B>(asio_stream, buffer_index, ch_ix);
+                            asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                         asio_channel
                             .iter_mut()
-                            .for_each(|s| *s = to_endianness(B::SILENCE));
+                            .for_each(|s| *s = to_endianness(A::SILENCE));
                     }
                 }
 
                 // 3. Write interleaved samples to ASIO channels, one channel at a time.
                 for ch_ix in 0..n_channels {
                     let asio_channel =
-                        asio_channel_slice_mut::<B>(asio_stream, buffer_index, ch_ix);
+                        asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                     for (frame, s_asio) in interleaved.chunks(n_channels).zip(asio_channel) {
-                        *s_asio = *s_asio + to_endianness(B::from_cpal_sample(&frame[ch_ix]));
+                        *s_asio = *s_asio + to_endianness(A::from_cpal_sample(&frame[ch_ix]));
                     }
                 }
             }
