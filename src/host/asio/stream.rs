@@ -150,7 +150,7 @@ impl Device {
                 FA: Fn(B) -> B,
             {
                 // 1. Write the ASIO channels to the CPAL buffer.
-                let interleaved: &mut [B] = cast_slice_mut(input_interleaved);
+                let interleaved: &mut [B] = cast_slice_mut(interleaved_input);
                 let n_frames = asio_stream.buffer_size as usize;
                 let n_channels = interleaved.len() / n_frames;
                 let buffer_index = asio_info.buffer_index as usize;
