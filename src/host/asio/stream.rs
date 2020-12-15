@@ -59,8 +59,8 @@ impl Device {
         output_config: &StreamConfig,
         sample_format: SampleFormat,
         mut data_callback: D,
-        error_callback: E,
-    ) -> Result<Self::Stream, BuildStreamError>
+        _error_callback: E,
+    ) -> Result<Stream, BuildStreamError>
     where
         D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
         E: FnMut(StreamError) + Send + 'static,
@@ -147,7 +147,7 @@ impl Device {
                 B: Sample,
                 D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
                 FA: Fn(A) -> A,
-                FA: Fn(B) -> B,
+                FB: Fn(B) -> B,
             {
                 // 1. Write the ASIO channels to the CPAL buffer.
                 let interleaved: &mut [B] = cast_slice_mut(interleaved_input);
