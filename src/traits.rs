@@ -226,15 +226,18 @@ pub trait DeviceTrait {
     /// Create a dynamically typed full duplex stream.
     fn build_full_duplex_stream_raw<D, E>(
         &self,
-        input_config: &StreamConfig,
-        output_config: &StreamConfig,
-        sample_format: SampleFormat,
-        data_callback: D,
-        error_callback: E,
+        _input_config: &StreamConfig,
+        _output_config: &StreamConfig,
+        _sample_format: SampleFormat,
+        _data_callback: D,
+        _error_callback: E,
     ) -> Result<Self::Stream, BuildStreamError>
     where
         D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
-        E: FnMut(StreamError) + Send + 'static;
+        E: FnMut(StreamError) + Send + 'static,
+    {
+        unimplemented!()
+    }
 }
 
 /// A stream created from `Device`, with methods to control playback.
