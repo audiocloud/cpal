@@ -12,6 +12,7 @@ extern crate ringbuf;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::RingBuffer;
+use cpal::HostId;
 
 const LATENCY_MS: f32 = 150.0;
 
@@ -41,7 +42,7 @@ fn main() -> Result<(), anyhow::Error> {
         not(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd")),
         not(feature = "jack")
     ))]
-    let host = cpal::default_host();
+    let host = cpal::host_from_id(HostId::Asio).expect("get asio");
 
     // Default devices.
     let input_device = host
@@ -128,8 +129,7 @@ fn main() -> Result<(), anyhow::Error> {
     // Run for 3 seconds before closing.
     println!("Playing for 3 seconds... ");
     std::thread::sleep(std::time::Duration::from_secs(3));
-    drop(input_stream);
-    drop(output_stream);
+    drop(io_stream);
     println!("Done!");
     Ok(())
 }

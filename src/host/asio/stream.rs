@@ -197,7 +197,7 @@ impl Device {
                             asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                         asio_channel
                             .iter_mut()
-                            .for_each(|s| *s = to_endianness(A::SILENCE));
+                            .for_each(|s| *s = from_endianness(A::SILENCE));
                     }
                 }
 
@@ -206,7 +206,7 @@ impl Device {
                     let asio_channel: &mut[A] =
                         asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                     for (frame, s_asio) in interleaved.chunks(n_channels).zip(asio_channel) {
-                        *s_asio = *s_asio + to_endianness(A::from_cpal_sample(&frame[ch_ix]));
+                        *s_asio = *s_asio + from_endianness(A::from_cpal_sample(&frame[ch_ix]));
                     }
                 }
             }

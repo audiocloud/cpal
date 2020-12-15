@@ -234,13 +234,7 @@ pub trait DeviceTrait {
     ) -> Result<Self::Stream, BuildStreamError>
     where
         D: FnMut(&Data, &mut Data, &InputCallbackInfo, &OutputCallbackInfo) + Send + 'static,
-        E: FnMut(StreamError) + Send + 'static,
-    {
-        assert_eq!(input_config.sample_rate, output_config.sample_rate);
-        assert_eq!(input_config.buffer_size, output_config.buffer_size);
-
-        unimplemented!()
-    }
+        E: FnMut(StreamError) + Send + 'static;
 }
 
 /// A stream created from `Device`, with methods to control playback.

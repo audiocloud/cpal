@@ -10,6 +10,7 @@ keywords = ["audio", "sound"]
 
 [features]
 asio = ["asio-sys", "num-traits"] # Only available on Windows. See README for setup instructions.
+default = ["asio"]
 
 [dependencies]
 thiserror = "1.0.2"
@@ -65,12 +66,12 @@ crate-type = ["cdylib"]
 [[example]]
 name = "feedback"
 path = "examples/feedback.rs"
-crate-type = ["cdylib"]
+crate-type = ["bin"]
 
 [[example]]
 name = "feedback_duplex"
 path = "examples/feedback_duplex.rs"
-crate-type = ["cdylib"]
+crate-type = ["bin"]
 
 [[example]]
 name = "record_wav"
