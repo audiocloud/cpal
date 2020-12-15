@@ -306,6 +306,34 @@ macro_rules! impl_platform_host {
                     )*
                 }
             }
+
+            fn build_full_duplex_stream_raw<D, E>(
+                &self,
+                input_config: &crate::StreamConfig,
+                output_config: &crate::StreamConfig,
+                sample_format: crate::SampleFormat,
+                data_callback: D,
+                error_callback: E,
+            ) -> Result<Self::Stream, crate::BuildStreamError>
+            where
+                D: FnMut(&crate::Data, &mut crate::Data, &crate::InputCallbackInfo, &crate::OutputCallbackInfo) + Send + 'static,
+                E: FnMut(crate::StreamError) + Send + 'static,
+            {
+                match self.0 {
+                    $(
+                        DeviceInner::$HostVariant(ref d) => d
+                            .build_full_duplex_stream_raw(
+                                input_config,
+                                output_config,
+                                sample_format,
+                                data_callback,
+                                error_callback,
+                            )
+                            .map(StreamInner::$HostVariant)
+                            .map(Stream::from),
+                    )*
+                }
+            }
         }
 
         impl crate::traits::HostTrait for Host {
