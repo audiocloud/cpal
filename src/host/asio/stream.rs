@@ -193,7 +193,7 @@ impl Device {
                 let buffer_index = asio_info.buffer_index as usize;
                 if silence_asio_buffer {
                     for ch_ix in 0..n_channels {
-                        let asio_channel =
+                        let asio_channel: &mut[A] =
                             asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                         asio_channel
                             .iter_mut()
@@ -203,7 +203,7 @@ impl Device {
 
                 // 3. Write interleaved samples to ASIO channels, one channel at a time.
                 for ch_ix in 0..n_channels {
-                    let asio_channel =
+                    let asio_channel: &mut[A] =
                         asio_channel_slice_mut::<A>(asio_stream, buffer_index, ch_ix);
                     for (frame, s_asio) in interleaved.chunks(n_channels).zip(asio_channel) {
                         *s_asio = *s_asio + to_endianness(A::from_cpal_sample(&frame[ch_ix]));
