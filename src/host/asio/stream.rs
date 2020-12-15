@@ -298,7 +298,7 @@ impl Device {
                         callback_info,
                         config.sample_rate,
                         std::convert::identity::<f64>,
-                        std::convert::identity::<f64>,
+                        std::convert::identity::<f32>,
                     );
                 }
 
