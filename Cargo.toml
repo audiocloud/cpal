@@ -68,6 +68,11 @@ path = "examples/feedback.rs"
 crate-type = ["cdylib"]
 
 [[example]]
+name = "feedback_duplex"
+path = "examples/feedback_duplex.rs"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "record_wav"
 path = "examples/record_wav.rs"
 crate-type = ["cdylib"]
